@@ -117,6 +117,16 @@ class _RestoreOptionsBodyState extends State<_RestoreOptionsBody> {
                     description: S.of(context).restore_description_from_backup,
                   ),
                 ),
+              Padding(
+                padding: EdgeInsets.only(top: 12),
+                child: OptionTile(
+                  key: ValueKey('restore_options_sovrnsync_button_key'),
+                  onPressed: () => Navigator.pushNamed(context, Routes.connectToSovrnsync),
+                  image: imageSeedKeys,
+                  title: 'Connect to Sovrnsync',
+                  description: 'Connect to your self-hosted Monero node via Tailscale',
+                ),
+              ),
               if (DeviceInfo.instance.isMobile)
                 Padding(
                   padding: EdgeInsets.only(top: 12),

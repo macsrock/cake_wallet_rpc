@@ -60,6 +60,7 @@ class Routes {
   static const backup = '/backup';
   static const editBackupPassword = '/edit_backup_passowrd';
   static const restoreFromBackup = '/restore_from_backup';
+  static const connectToSovrnsync = '/restore/sovrnsync';
   static const support = '/support';
   static const supportLiveChat = '/support/live_chat';
   static const supportOtherLinks = '/support/other';
