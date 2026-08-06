@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:cw_core/amount/money.dart';
 import 'package:cw_core/crypto_currency.dart';
@@ -37,6 +38,7 @@ import 'package:zkool/src/rust/api/migrate.dart' as zkool_migrate;
 import 'package:zkool/src/rust/api/network.dart' as zkool_network;
 import 'package:zkool/src/rust/pay.dart' as zkool_paydart;
 import 'package:zkool/src/rust/frb_generated.dart' as zkool_frb;
+import 'package:zkool/src/rust/lib.dart' as zkool_lib;
 
 part 'zcash_wallet.g.dart';
 
@@ -517,6 +519,50 @@ abstract class ZcashWalletBase
       }
       rethrow;
     }
+  }
+
+  /// Completes an airgapped spend: takes the PCZT signed by a Keystone or
+  /// Cupcake device, proves it here (the device never proves), extracts the
+  /// transaction and broadcasts it.
+  ///
+  /// Returns the broadcast transaction id.
+  Future<String> commitPcztUR(final List<String> urCodes) async {
+    final signedPczt = decodeZcashPcztFrames(urCodes);
+
+    final txId = await runWithCoin(
+      accountId: accountId,
+      func: (final coin) async {
+        // Only the `pczt` field is read downstream; the rest of the package
+        // is metadata that the prove/extract steps pass through untouched.
+        final signedPackage = zkool_pay.PcztPackage(
+          pczt: signedPczt,
+          nSpends: zkool_lib.UsizeArray4(Uint64List.fromList(<int>[0, 0, 0, 0])),
+          saplingIndices: Uint64List(0),
+          orchardIndices: Uint64List(0),
+          ironwoodIndices: Uint64List(0),
+          canSign: false,
+          canBroadcast: true,
+          isIssuance: false,
+        );
+        final proven = await zkool_pay.proveAndFinalize(pczt: signedPackage, c: coin);
+        final txBytes = await zkool_pay.extractTransaction(package: proven);
+        final currentHeight = await zkool_network.getCurrentHeight(c: coin);
+        final result = await zkool_pay.broadcastTransaction(
+          height: currentHeight,
+          txBytes: txBytes,
+          c: coin,
+        );
+        final normalized = ZcashWalletService.normalizeTxId(result);
+        if (normalized.length != 64) {
+          throw TransactionCommitFailed(errorMessage: result);
+        }
+        return normalized;
+      },
+    );
+
+    await updateTransactions();
+    await updateBalance();
+    return txId;
   }
 
   static const _dispPhrase = "Received to disposable address";
@@ -1509,9 +1555,14 @@ abstract class ZcashWalletBase
       throw Exception('Key is required for wallet restoration');
     }
 
+    // A unified full viewing key restores a watch-only account: the backend
+    // derives every pool's viewing key from it and can sync and build
+    // transactions, but signing must happen on the airgapped device that
+    // exported it.
+    final zcashUfvkRegex = RegExp(r'^uview(test)?1[a-z0-9]+$');
     final zcashSecretExtendedKeyRegex = RegExp(r'^secret-extended-key-main1[a-z0-9]+$');
-    if (!zcashSecretExtendedKeyRegex.hasMatch(keys)) {
-      throw Exception('Key is not in secret-extended-key-main1 format');
+    if (!zcashSecretExtendedKeyRegex.hasMatch(keys) && !zcashUfvkRegex.hasMatch(keys)) {
+      throw Exception('Key is not in secret-extended-key-main1 or unified viewing key format');
     }
 
     final accountId = await restoreZcashWalletFromSeed(

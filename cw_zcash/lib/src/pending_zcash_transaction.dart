@@ -3,6 +3,9 @@ import 'package:cw_core/exceptions.dart';
 import 'package:cw_core/pending_transaction.dart';
 import 'package:cw_core/utils/print_verbose.dart';
 import 'package:cw_zcash/cw_zcash.dart';
+import 'package:ur/cbor_lite.dart';
+import 'package:ur/ur.dart';
+import 'package:ur/ur_encoder.dart';
 import 'package:zkool/src/rust/api/pay.dart' as zkool_pay;
 import 'package:zkool/src/rust/api/network.dart' as zkool_network;
 
@@ -70,9 +73,25 @@ class PendingZcashTransaction with PendingTransaction {
     await zcashWallet.updateBalance();
   }
 
+  /// Emits the unsigned PCZT as `ur:zcash-pczt` frames for an airgapped
+  /// signer (Keystone or Cupcake). The signer returns a signed PCZT, which
+  /// [ZcashWallet.commitPcztUR] proves, extracts and broadcasts.
   @override
-  Future<Map<String, String>> commitUR() => throw UnimplementedError('UR not supported for Zcash');
+  Future<Map<String, String>> commitUR() {
+    final cbor = encodeZcashPcztCbor(txPlan.pczt);
+    // Preserve the CBOR framing bc-ur expects around the payload.
+    final encoder = UREncoder(UR(zcashPcztUrType, cbor), 120);
+    final List<String> values = [];
+    while (!encoder.isComplete) {
+      values.add(encoder.nextPart());
+    }
+    return Future.value({
+      "Keystone/Cupcake bcur": values.join("\n"),
+    });
+  }
 
+  /// Watch-only Zcash accounts (restored from a UFVK exported by an airgapped
+  /// signer) hold no spending keys, so they must sign over QR.
   @override
-  bool shouldCommitUR() => false;
+  bool shouldCommitUR() => zcashWallet.isHardwareWallet;
 }

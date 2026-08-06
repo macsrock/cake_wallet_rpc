@@ -12,5 +12,6 @@ export 'src/models.dart';
 export 'src/zcash_transaction_credentials.dart';
 export 'src/pending_zcash_transaction.dart';
 export 'src/zcash_network.dart';
+export 'src/zcash_ur.dart';
 export 'src/zcash_receive_page_options.dart';
 export 'src/zcash_wallet_addresses.dart';
